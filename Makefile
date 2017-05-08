@@ -1,7 +1,9 @@
 LIBS = -ljack -lshout -lvorbis -lvorbisenc -logg -lopus
 CFLAGS = -std=gnu99 -g
 
-OBJECTS = \
+TARGETS = tidstream opusplit
+
+tidstream_OBJECTS = \
 	tidstream.o \
 	audio.o \
 	circbuf.o \
@@ -10,7 +12,18 @@ OBJECTS = \
 	enc_opus.o \
 	opus_header.o
 
-tidstream: $(OBJECTS)
+opusplit_OBJECTS = \
+	opusplit.o \
+	opus_header.o \
+	opus_utils.o \
+	file_writer.o
+
+all: $(TARGETS)
+
+tidstream: $(tidstream_OBJECTS)
+	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+opusplit: $(opusplit_OBJECTS)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 install: tidstream
@@ -18,5 +31,5 @@ install: tidstream
 
 .PHONY: clean
 clean:
-	rm -f *.o tidstream
+	rm -f *.o $(TARGETS)
 
