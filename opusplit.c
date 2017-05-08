@@ -61,6 +61,7 @@ char **decode_comment_header(char *buf, int length) {
 
 int main(int argc, char **argv) {
     int status = 0;
+    char *filename_base = NULL;
 
     if(optind >= argc) {
         fprintf(stderr, "error: no input file specified\n");
@@ -244,6 +245,10 @@ int main(int argc, char **argv) {
                     }
 
                     file_writer_input(file_writers[s], &opo);
+                    
+                    if(op.granulepos >= 0) {
+                        file_writer_update_granulepos(fw, op.granulepos);
+                    }
 
                     data += packet_offset;
                     len -= packet_offset;
@@ -253,7 +258,10 @@ int main(int argc, char **argv) {
 
                 //printf("packet %d %d %d %d\n", op.granulepos, op.bytes, op.packetno,
                 //    valid);
-                granulepos = op.granulepos;
+                if(op.granulepos > 0) {
+                    granulepos = op.granulepos;
+                    
+                }
 
             }
         }
