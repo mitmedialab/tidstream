@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
 
 #include <ogg/ogg.h>
 
@@ -15,6 +16,9 @@
 
 void usage(char *exe) {
     fprintf(stderr, "usage: %s [options] infile.opus\n", exe);
+    fprintf(stderr, "\t--file <string>\t Specify the input file.\n");
+    fprintf(stderr, "\t--out <string>\t Specify the destination filename (default: input filename).\n");
+    fprintf(stderr, "\t--chuck-size <int>\t Specify the chuck size in seconds (default: 3600).\n");
 }
 
 /**
@@ -61,17 +65,44 @@ char **decode_comment_header(char *buf, int length) {
 
 int main(int argc, char **argv) {
     int status = 0;
-    char *filename_base = NULL;
+    char *filename_output     = NULL;
+    char *filename_input      = NULL;
+    int  chuck_size           = 3600;
+    int c;
+    int digit_optind = 0;
 
-    if(optind >= argc) {
-        fprintf(stderr, "error: no input file specified\n");
-        usage(argv[0]);
-        return 2;
+    while (1) {
+      int this_option_optind = optind ? optind : 1;
+      int option_index = 0;
+      static struct option long_options[] = {
+          {"out",         optional_argument, NULL,  0 },
+          {"file",        required_argument, NULL,  1 },
+          {"chunck-size", optional_argument, NULL,  2 },
+          {0,             0,                 0,     0 }
+        };
+      c = getopt_long(argc, argv, "o:f:",long_options, &option_index);
+      if (c == -1) break;
+
+      switch (c) {
+        case 0: filename_output = optarg;           break;
+        case 1: filename_input  = optarg;           break;
+        case 2: chuck_size      = atoi(optarg);     break;
+        default: usage(argv[0]);
+        }
     }
 
-    char *filename = argv[optind];
+    if (filename_input == NULL){
+      usage(argv[0]);
+      return -1;
+    }
 
-    FILE *fp = fopen(filename, "rb");
+    if (filename_output == NULL) filename_output = filename_input;
+
+    printf("Input : %s\n",      filename_input);
+    printf("Output : %s\n",     filename_output);
+    printf("Chuck size : %d\n", chuck_size);
+
+    FILE *fp = fopen(filename_input, "rb");
     if(!fp) {
         perror("error: opening file:");
         return 10;
@@ -89,7 +120,7 @@ int main(int argc, char **argv) {
     ogg_sync_init(&oy);
     bool stream_init = false;
 
-    printf("Reading file: %s\n", filename);
+    printf("Reading file: %s\n", filename_input);
 
     bool have_headers = false;
 
@@ -172,25 +203,10 @@ int main(int argc, char **argv) {
         printf("  failed to decode comment header\n");
     }
 
-    char basename[4096];
-    strncpy(basename, filename, sizeof(basename)-1);
-    if(strlen(filename) > 5 && strcmp(".opus", filename + (strlen(filename) - 5)) == 0) {
-        basename[strlen(basename) - 5] = '\0';
-    }
-
-
-    printf("Creating file writers\n");
-    header->channels = 1;
-    header->channel_mapping = 0;
-    OpusFileWriter **file_writers = (OpusFileWriter**)malloc(header->nb_streams *
-        sizeof(OpusFileWriter*));
-    for(int i=0; i<header->nb_streams; i++) {
-        file_writers[i] = (OpusFileWriter*)malloc(sizeof(OpusFileWriter));
-        char namebuf[4096];
-        snprintf(namebuf, sizeof(namebuf), "%s-%02d", basename, i+1);
-        file_writer_init(file_writers[i], namebuf, header, comment_header, comment_length);
-    }
-
+    printf("Creating file writer for %s\n", filename_output);
+    OpusFileWriter* file_writers = (OpusFileWriter*)malloc(sizeof(OpusFileWriter));
+    file_writer_init(file_writers, filename_output, header, comment_header, comment_length);
+    file_writer_set_max_length(file_writers, header->input_sample_rate * chuck_size);
 
     int64_t granulepos = 0;
 
@@ -203,68 +219,20 @@ int main(int argc, char **argv) {
         while(ogg_sync_pageout(&oy, &og) == 1) {
             int err = ogg_stream_pagein(&os, &og);
             if(err) {
-                fprintf(stderr, "error: ogg stream error\n");
+                printf( "error: ogg stream error\n");
                 continue;
             }
 
             while(err = ogg_stream_packetout(&os, &op)) {
                 if(err == -1) {
-                    fprintf(stderr, "warning: gap in stream\n");
+                    printf( "warning: gap in stream\n");
                     continue;
                 }
-
-                const unsigned char *data = op.packet;
-                opus_int32 len = op.bytes;
-                opus_int32 packet_offset;
-                opus_int16 size[48];
-                unsigned char toc;
-                ogg_packet opo;
-
-
-                for(int s=0; s<header->nb_streams; s++) {
-                    int self_delimited = s != header->nb_streams-1;
-                    int fcount = opus_packet_parse_impl(data, len, self_delimited,
-                        &toc, NULL, size, NULL, &packet_offset);
-
-                    opo.packet = (unsigned char*)malloc(packet_offset);
-                    opo.bytes = packet_offset;
-                    opo.b_o_s = 0;
-                    opo.e_o_s = op.e_o_s;
-                    opo.granulepos = op.granulepos;
-                    opo.packetno = op.packetno;
-
-                    if(self_delimited) {
-                        opo.packet[0] = toc;
-                        if(opo.packet[1] < 252) {
-                            memcpy(opo.packet+1, data+2, packet_offset-2);
-                            opo.bytes = packet_offset-1;
-                        } else {
-                            memcpy(opo.packet+1, data+3, packet_offset-3);
-                            opo.bytes = packet_offset-2;
-                        }
-                    } else {
-                        memcpy(opo.packet, data, packet_offset);
-                    }
-
-                    file_writer_input(file_writers[s], &opo);
-
-                    if(op.granulepos >= 0) {
-                        file_writer_update_granulepos(file_writers[s], op.granulepos);
-                    }
-
-                    data += packet_offset;
-                    len -= packet_offset;
-
-                    free(opo.packet);
-                }
-
-                //printf("packet %d %d %d %d\n", op.granulepos, op.bytes, op.packetno,
-                //    valid);
+                file_writer_input(file_writers, &op);
+                file_writer_update_granulepos(file_writers, op.granulepos);
                 if(op.granulepos > 0) {
                     granulepos = op.granulepos;
-
                 }
-
             }
         }
 
@@ -277,9 +245,7 @@ int main(int argc, char **argv) {
     }
 
     printf("Closing file writers\n");
-    for(int s=0; s<header->nb_streams; s++) {
-        file_writer_close(file_writers[s]);
-    }
+    file_writer_close(file_writers);
 
 
 

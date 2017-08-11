@@ -6,12 +6,12 @@
 #include "util.h"
 #include "file_writer.h"
 
-void file_writer_init(OpusFileWriter *fw, const char *name, const OpusHeader *id, 
+void file_writer_init(OpusFileWriter *fw, const char *name, const OpusHeader *id,
   const char *tags, int tag_len) {
     fw->name = (char*)malloc(strlen(name));
     CHECK_MALLOC(fw->name);
     strcpy(fw->name, name);
-    
+
     memcpy(&fw->id, id, sizeof(OpusHeader));
     fw->tags = (char*)malloc(tag_len);
     CHECK_MALLOC(fw->tags);
@@ -20,12 +20,12 @@ void file_writer_init(OpusFileWriter *fw, const char *name, const OpusHeader *id
 
     fw->fd = NULL;
 
-    fw->id.channels = 1;
-    fw->id.channel_mapping = 0;
+    fw->id.channels = id->channels;
+    fw->id.channel_mapping = id->channel_mapping;
     ogg_stream_init(&fw->os, rand());
 
     fw->granulepos = 0;
-    fw->max_length = 3600 * 48000;
+    fw->max_length = 3600 * id->input_sample_rate;
     fw->unused_frames = 0;
     fw->hist = NULL;
     fw->hist_last = NULL;
@@ -85,7 +85,7 @@ void file_writer_input(OpusFileWriter *fw, ogg_packet *op) {
         fw->op.bytes = fw->tag_len;
         fw->op.b_o_s = 0;
         fw->op.packetno++;
-        
+
         ogg_stream_packetin(&fw->os, &fw->op);
         file_writer_write(fw, true);
 
@@ -149,7 +149,7 @@ void file_writer_input(OpusFileWriter *fw, ogg_packet *op) {
     if(close) {
         file_writer_close(fw);
     }
-    
+
     /* Trim queue */
     while((fw->hist_frames - fw->hist->nframes) >= (MIN_HIST + fw->unused_frames)) {
         fw->hist_frames -= fw->hist->nframes;
