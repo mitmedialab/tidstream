@@ -93,13 +93,13 @@ int enc_vorbis_encode(shout_t *shout, float **data, int nframes) {
                 int ret = shout_send(shout, ov.og.header, ov.og.header_len);
                 if(ret != SHOUTERR_SUCCESS) {
                     fprintf(stderr, "shout error: %s\n", shout_get_error(shout));
-                    break;
+                    return -4;
                 }
                 
                 ret = shout_send(shout, ov.og.body, ov.og.body_len);
                 if(ret != SHOUTERR_SUCCESS) {
                     fprintf(stderr, "shout error: %s\n", shout_get_error(shout));
-                    break;
+                    return -4;
                 }
 
                 shout_sync(shout);

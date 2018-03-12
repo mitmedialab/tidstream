@@ -149,6 +149,7 @@ int main(int argc, char **argv) {
     tidstream_err_status_t status = ERR_OK;
 
     do {
+        reinitialize:
         status = ERR_OK;
 
         shout_t *shout = stream_setup(shout_host, shout_port, shout_password,
@@ -191,7 +192,7 @@ int main(int argc, char **argv) {
                 if(ret != 0) {
                     fprintf(stderr, "encoder error: %d\n", ret);
                     status = ERR_ENCODER;
-                    continue;
+                    goto reinitialize;
                 }
             }
             usleep(1000);
